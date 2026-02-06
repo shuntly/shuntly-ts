@@ -1,8 +1,8 @@
 import * as fs from "fs";
-import { ShuntRecord } from "./record.js";
+import { ShuntlyRecord } from "./record.js";
 
 export interface Sink {
-  write(record: ShuntRecord): void;
+  write(record: ShuntlyRecord): void;
   close(): void;
 }
 
@@ -16,7 +16,7 @@ export class SinkStream implements Sink {
     this.stream = stream ?? process.stderr;
   }
 
-  write(record: ShuntRecord): void {
+  write(record: ShuntlyRecord): void {
     this.stream.write(record.toJSONString() + "\n");
   }
 
@@ -43,7 +43,7 @@ export class SinkFile implements Sink {
     return this.fd;
   }
 
-  write(record: ShuntRecord): void {
+  write(record: ShuntlyRecord): void {
     const fd = this.ensureOpen();
     fs.writeSync(fd, record.toJSONString() + "\n");
   }
@@ -66,7 +66,7 @@ export class SinkMany implements Sink {
     this.sinks = sinks;
   }
 
-  write(record: ShuntRecord): void {
+  write(record: ShuntlyRecord): void {
     for (const sink of this.sinks) {
       sink.write(record);
     }

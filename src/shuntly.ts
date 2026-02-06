@@ -1,4 +1,4 @@
-import { ShuntRecord } from "./record.js";
+import { ShuntlyRecord } from "./record.js";
 import { Sink, SinkStream } from "./sinks.js";
 
 type AnyFunction = (...args: unknown[]) => unknown;
@@ -110,7 +110,7 @@ function createWrapper(
 
     const recordAndWrite = (response: unknown, err: string | null) => {
       const durationMs = performance.now() - startTime;
-      const record = ShuntRecord.build({
+      const record = ShuntlyRecord.build({
         client: clientName,
         method,
         request,

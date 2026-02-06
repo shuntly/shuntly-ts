@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { shunt, ShuntRecord, Sink, SinkStream } from "../src/index.js";
+import { shunt, ShuntlyRecord, Sink, SinkStream } from "../src/index.js";
 import { Writable } from "stream";
 
 // Helper to capture sink output
 class TestSink implements Sink {
-  records: ShuntRecord[] = [];
+  records: ShuntlyRecord[] = [];
 
-  write(record: ShuntRecord): void {
+  write(record: ShuntlyRecord): void {
     this.records.push(record);
   }
 
@@ -274,7 +274,7 @@ describe("SinkStream", () => {
     });
 
     const sink = new SinkStream(stream);
-    const record = ShuntRecord.build({
+    const record = ShuntlyRecord.build({
       client: "Test",
       method: "test",
       request: { foo: "bar" },

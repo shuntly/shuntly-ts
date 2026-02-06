@@ -1,6 +1,6 @@
 import * as os from "os";
 
-export interface ShuntRecordData {
+export interface ShuntlyRecordData {
   timestamp: string;
   hostname: string;
   user: string;
@@ -13,7 +13,7 @@ export interface ShuntRecordData {
   error: string | null;
 }
 
-export class ShuntRecord {
+export class ShuntlyRecord {
   readonly timestamp: string;
   readonly hostname: string;
   readonly user: string;
@@ -25,7 +25,7 @@ export class ShuntRecord {
   readonly durationMs: number;
   readonly error: string | null;
 
-  constructor(data: ShuntRecordData) {
+  constructor(data: ShuntlyRecordData) {
     this.timestamp = data.timestamp;
     this.hostname = data.hostname;
     this.user = data.user;
@@ -45,8 +45,8 @@ export class ShuntRecord {
     response: unknown;
     durationMs: number;
     error?: string | null;
-  }): ShuntRecord {
-    return new ShuntRecord({
+  }): ShuntlyRecord {
+    return new ShuntlyRecord({
       timestamp: new Date().toISOString(),
       hostname: os.hostname(),
       user: os.userInfo().username,
@@ -60,7 +60,7 @@ export class ShuntRecord {
     });
   }
 
-  toJSON(): ShuntRecordData {
+  toJSON(): ShuntlyRecordData {
     return {
       timestamp: this.timestamp,
       hostname: this.hostname,
