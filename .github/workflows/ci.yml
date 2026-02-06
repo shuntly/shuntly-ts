@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  release:
+    types: published
+
+
+jobs:
+  #-----------------------------------------------------------------------------
+  test:
+    name: Test / ${{ matrix.os.name }} / Node ${{ matrix.node.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - {name: 'ubuntu-22.04', npm_cache: '~/.npm'}
+          - {name: 'windows-2022', npm_cache: '~\AppData\Local\npm-cache'}
+          - {name: 'macos-15', npm_cache: '~/Library/Caches/npm'}
+        node:
+          - {version: '18'}
+          - {version: '20'}
+          - {version: '22'}
+
+    runs-on: ${{ matrix.os.name }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node.version }}
+
+    - uses: actions/cache@v4
+      with:
+        path: ${{ matrix.os.npm_cache }}
+        key: test-npm-${{ matrix.os.name }}-${{ matrix.node.version }}-${{ hashFiles('package-lock.json', '.github/workflows/ci.yml') }}
+        restore-keys: test-npm-${{ matrix.os.name }}-${{ matrix.node.version }}-
+
+    - run: npm install
+
+    - run: npm test
+
+  #-----------------------------------------------------------------------------
+  checks:
+    name: ${{ matrix.checks.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        checks:
+          - {name: 'Format', command: 'npm run format:check'}
+          - {name: 'Lint', command: 'npm run lint'}
+          - {name: 'Build', command: 'npm run build'}
+
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: checks-npm-${{ hashFiles('package-lock.json', '.github/workflows/ci.yml') }}
+        restore-keys: checks-npm-
+
+    - run: npm install
+
+    - run: ${{ matrix.checks.command }}
+
+  #-----------------------------------------------------------------------------
+  publish:
+    name: Publish
+    if: github.event_name == 'release'
+
+    needs: [test, checks]
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        registry-url: 'https://registry.npmjs.org'
+
+    - run: npm install
+    - run: npm run build
+    - run: npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
