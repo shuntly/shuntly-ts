@@ -103,17 +103,29 @@ export class SinkPipe implements Sink {
 
   write(record: ShuntlyRecord): void {
     const fd = this.ensureOpen();
-    if (fd !== null) {
+    if (fd === null) {
+      return;
+    }
+
+    const data = Buffer.from(record.toJSONString() + "\n");
+    let offset = 0;
+
+    while (offset < data.length) {
       try {
-        fs.writeSync(fd, record.toJSONString() + "\n");
+        const written = fs.writeSync(fd, data, offset);
+        offset += written;
       } catch (err: unknown) {
         const code = (err as NodeJS.ErrnoException).code;
-        if (code === "EAGAIN" || code === "EPIPE") {
-          // Buffer full or reader disconnected — drop it
-          this.close();
-        } else {
-          throw err;
+        if (code === "EAGAIN") {
+          // Buffer full — retry
+          continue;
         }
+        if (code === "EPIPE") {
+          // Reader disconnected
+          this.close();
+          return;
+        }
+        throw err;
       }
     }
   }
