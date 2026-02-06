@@ -164,6 +164,10 @@ const client = shunt(myClient, null, ["chat.send", "embeddings.create"]);
 
 ## What is New in Shuntly
 
+### 0.4.0
+
+Added README.md, ci.yml, and additional configuration.
+
 ### 0.3.0
 
 Initial release.
