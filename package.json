@@ -1,6 +1,6 @@
 {
   "name": "shuntly",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A lightweight wiretap for LLM SDKs: capture all requests and responses with a single line of code",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
