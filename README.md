@@ -1,11 +1,16 @@
 # Shuntly
 
+| | CI | Package |
+|---|---|---|
+| Python | [![CI](https://img.shields.io/github/actions/workflow/status/shuntly/shuntly-py/ci.yml?branch=default&label=CI&logo=Github)](https://github.com/shuntly/shuntly-py/actions/workflows/ci.yml) | [![PyPI](https://img.shields.io/pypi/v/shuntly?label=PyPI&logo=pypi)](https://pypi.org/project/shuntly/) |
+| TypeScript | [![CI](https://img.shields.io/github/actions/workflow/status/shuntly/shuntly-ts/ci.yml?branch=main&label=CI&logo=Github)](https://github.com/shuntly/shuntly-ts/actions/workflows/ci.yml) | [![NPM](https://img.shields.io/npm/v/shuntly?label=NPM&logo=npm)](https://www.npmjs.com/package/shuntly) |
+
+
 A lightweight wiretap for LLM SDKs: capture all requests and responses with a single line of code.
 
 Shuntly wraps LLM SDKs to record every request and response as JSON. Calling `shunt()` wraps and returns a client with its original interface and types preserved, permitting consistent IDE autocomplete and type checking. Shuntly provides a collection of configurable "sinks" to write records to stderr, files, named pipes, or any combination.
 
 While debugging LLM tooling, maybe you want to see exactly what is being sent and returned. When launching an agent, maybe you want to record every call to the LLM. Shuntly can capture it all without TLS interception, a web-based platform, or complicated logging infrastructure.
-
 
 ## Install
 
@@ -42,8 +47,15 @@ Each call to `messages.create()` writes a complete JSON record:
   "pid": 42,
   "client": "Anthropic",
   "method": "messages.create",
-  "request": {"model": "claude-sonnet-4-20250514", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]},
-  "response": {"id": "msg_...", "content": [{"type": "text", "text": "Hi!"}]},
+  "request": {
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 1024,
+    "messages": [{ "role": "user", "content": "Hello" }]
+  },
+  "response": {
+    "id": "msg_...",
+    "content": [{ "type": "text", "text": "Hi!" }]
+  },
   "durationMs": 823.4,
   "error": null
 }
@@ -52,7 +64,6 @@ Each call to `messages.create()` writes a complete JSON record:
 ## View
 
 Shuntly JSON output can be streamed or read with a JSON viewer like [`fx`](https://fx.wtf). These tools provide JSON syntax highlighting and collapsible sections.
-
 
 ### View Realtime Shuntly from `stderr`
 
@@ -69,14 +80,16 @@ Given a `command`, you can view Shuntly `stderr` output in `fx` with the followi
 $ command 2>&1 >/dev/null | fx
 ```
 
-
 ### View Realtime Shuntly via a Pipe
 
 To view Shuntly output via a named pipe in another terminal, the `SinkPipe` sink can be used. First, name the pipe when providing `SinkPipe` to `shunt()`:
 
 ```typescript
 import { shunt, SinkPipe } from "shuntly";
-const client = shunt(new Anthropic({ apiKey: API_KEY }), new SinkPipe("/tmp/shuntly.fifo"));
+const client = shunt(
+  new Anthropic({ apiKey: API_KEY }),
+  new SinkPipe("/tmp/shuntly.fifo"),
+);
 ```
 
 Then, in a terminal to view Shuntly output, create the named pipe and provide it to `fx`
@@ -87,14 +100,16 @@ $ mkfifo /tmp/shuntly.fifo; fx < /tmp/shuntly.fifo
 
 Then, in another terminal, launch your command.
 
-
 ### View Shuntly from a File
 
 To store Shuntly output in a file, the `SinkFile` sink can be used. Name the file when providing `SinkFile` to `shunt()`:
 
 ```typescript
 import { shunt, SinkFile } from "shuntly";
-const client = shunt(new Anthropic({ apiKey: API_KEY }), new SinkFile("/tmp/shuntly.jsonl"));
+const client = shunt(
+  new Anthropic({ apiKey: API_KEY }),
+  new SinkFile("/tmp/shuntly.jsonl"),
+);
 ```
 
 Then, after your command is complete, view the file:
@@ -110,10 +125,10 @@ Using `SinkMany`, multiple sinks can be written to simultaneously.
 ```typescript
 import { shunt, SinkStream, SinkFile, SinkMany } from "shuntly";
 
-const client = shunt(new Anthropic(), new SinkMany([
-  new SinkStream(),
-  new SinkFile("/tmp/shuntly.jsonl"),
-]));
+const client = shunt(
+  new Anthropic(),
+  new SinkMany([new SinkStream(), new SinkFile("/tmp/shuntly.jsonl")]),
+);
 ```
 
 ### Custom Sinks
@@ -131,16 +146,15 @@ class SinkConsole implements Sink {
 }
 ```
 
-
 ## Supported SDKs
 
 Shuntly presently handles these clients:
 
-| Client | Package | Methods |
-|--------|---------|---------|
-| `Anthropic` | [`npm`](https://www.npmjs.com/package/@anthropic-ai/sdk) | `messages.create`, `messages.stream` |
-| `OpenAI` | [`npm`](https://www.npmjs.com/package/openai) | `chat.completions.create` |
-| `GoogleGenAI` | [`npm`](https://www.npmjs.com/package/@google/genai) | `models.generateContent`, `models.generateContentStream` |
+| Client        | Package                                                  | Methods                                                  |
+| ------------- | -------------------------------------------------------- | -------------------------------------------------------- |
+| `Anthropic`   | [`npm`](https://www.npmjs.com/package/@anthropic-ai/sdk) | `messages.create`, `messages.stream`                     |
+| `OpenAI`      | [`npm`](https://www.npmjs.com/package/openai)            | `chat.completions.create`                                |
+| `GoogleGenAI` | [`npm`](https://www.npmjs.com/package/@google/genai)     | `models.generateContent`, `models.generateContentStream` |
 
 For anything else, method paths can be explicitly provided:
 
