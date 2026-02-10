@@ -299,7 +299,10 @@ export function shunt(
         recordAndWrite(result, null);
         return result;
       } catch (err) {
-        recordAndWrite(null, `${(err as Error).name}: ${(err as Error).message}`);
+        recordAndWrite(
+          null,
+          `${(err as Error).name}: ${(err as Error).message}`,
+        );
         throw err;
       }
     };

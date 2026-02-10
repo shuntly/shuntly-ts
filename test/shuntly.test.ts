@@ -319,9 +319,10 @@ describe("with standalone functions", () => {
     };
 
     const chunks: unknown[] = [];
-    for await (const chunk of wrapped(model, context) as AsyncIterable<
-      unknown
-    >) {
+    for await (const chunk of wrapped(
+      model,
+      context,
+    ) as AsyncIterable<unknown>) {
       chunks.push(chunk);
     }
 
@@ -341,10 +342,7 @@ describe("with standalone functions", () => {
   it("preserves extra methods on async iterables", async () => {
     const sink = new TestSink();
 
-    function stream(
-      model: { provider: string; id: string },
-      context: object,
-    ) {
+    function stream(model: { provider: string; id: string }, context: object) {
       const iterable = {
         async *[Symbol.asyncIterator]() {
           yield { type: "text", text: "hello" };
@@ -435,9 +433,9 @@ describe("with standalone functions", () => {
 
     const wrapped = shunt(compute, sink);
 
-    expect(() =>
-      wrapped({ provider: "openai", id: "gpt-4" }),
-    ).toThrow("sync failure");
+    expect(() => wrapped({ provider: "openai", id: "gpt-4" })).toThrow(
+      "sync failure",
+    );
 
     expect(sink.records).toHaveLength(1);
     expect(sink.records[0].error).toBe("Error: sync failure");
