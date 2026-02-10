@@ -263,6 +263,202 @@ describe("shunt", () => {
   });
 });
 
+describe("with standalone functions", () => {
+  it("records async function calls", async () => {
+    const sink = new TestSink();
+
+    async function complete(
+      model: { provider: string; id: string },
+      context: { systemPrompt: string; messages: unknown[] },
+    ) {
+      return { text: "hello from complete" };
+    }
+
+    const wrapped = shunt(complete, sink);
+
+    const model = { provider: "openai", id: "gpt-4o-mini" };
+    const context = {
+      systemPrompt: "You are helpful.",
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    const result = await wrapped(model, context);
+
+    expect(result.text).toBe("hello from complete");
+    expect(sink.records).toHaveLength(1);
+
+    const record = sink.records[0];
+    expect(record.client).toBe("openai/gpt-4o-mini");
+    expect(record.method).toBe("complete");
+    expect(record.request).toEqual(context);
+    expect(record.error).toBeNull();
+    expect(record.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("records streaming (async iterable) calls", async () => {
+    const sink = new TestSink();
+
+    function stream(
+      model: { provider: string; id: string },
+      context: { systemPrompt: string; messages: unknown[] },
+    ): AsyncIterable<unknown> {
+      return {
+        async *[Symbol.asyncIterator]() {
+          yield { type: "text", text: "hel" };
+          yield { type: "text", text: "lo" };
+        },
+      };
+    }
+
+    const wrapped = shunt(stream, sink);
+
+    const model = { provider: "anthropic", id: "claude-3" };
+    const context = {
+      systemPrompt: "Be concise.",
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    const chunks: unknown[] = [];
+    for await (const chunk of wrapped(model, context) as AsyncIterable<
+      unknown
+    >) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(2);
+    expect(sink.records).toHaveLength(1);
+
+    const record = sink.records[0];
+    expect(record.client).toBe("anthropic/claude-3");
+    expect(record.method).toBe("stream");
+    expect(record.response).toEqual([
+      { type: "text", text: "hel" },
+      { type: "text", text: "lo" },
+    ]);
+    expect(record.error).toBeNull();
+  });
+
+  it("preserves extra methods on async iterables", async () => {
+    const sink = new TestSink();
+
+    function stream(
+      model: { provider: string; id: string },
+      context: object,
+    ) {
+      const iterable = {
+        async *[Symbol.asyncIterator]() {
+          yield { type: "text", text: "hello" };
+        },
+        result: async () => ({
+          role: "assistant",
+          content: "hello",
+        }),
+      };
+      return iterable;
+    }
+
+    const wrapped = shunt(stream, sink);
+
+    const model = { provider: "openai", id: "gpt-4o-mini" };
+    const s = wrapped(model, { messages: [] }) as AsyncIterable<unknown> & {
+      result: () => Promise<unknown>;
+    };
+
+    // Consume the stream
+    const chunks: unknown[] = [];
+    for await (const chunk of s) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+
+    // .result() should still be accessible
+    expect(typeof s.result).toBe("function");
+    const resultValue = await s.result();
+    expect(resultValue).toEqual({ role: "assistant", content: "hello" });
+  });
+
+  it("derives client name from first arg provider/id", async () => {
+    const sink = new TestSink();
+
+    async function complete(model: unknown, context: unknown) {
+      return "ok";
+    }
+
+    const wrapped = shunt(complete, sink);
+    await wrapped({ provider: "google", id: "gemini-2.0" }, {});
+
+    expect(sink.records[0].client).toBe("google/gemini-2.0");
+  });
+
+  it("uses 'Unknown' when first arg has no provider/id", async () => {
+    const sink = new TestSink();
+
+    async function complete(text: string) {
+      return "ok";
+    }
+
+    const wrapped = shunt(complete, sink);
+    await wrapped("hello");
+
+    expect(sink.records[0].client).toBe("Unknown");
+  });
+
+  it("records errors from async functions", async () => {
+    const sink = new TestSink();
+
+    async function complete(
+      model: { provider: string; id: string },
+      context: object,
+    ) {
+      throw new Error("API down");
+    }
+
+    const wrapped = shunt(complete, sink);
+
+    await expect(
+      wrapped({ provider: "openai", id: "gpt-4o-mini" }, { messages: [] }),
+    ).rejects.toThrow("API down");
+
+    expect(sink.records).toHaveLength(1);
+    expect(sink.records[0].error).toBe("Error: API down");
+    expect(sink.records[0].response).toBeNull();
+    expect(sink.records[0].client).toBe("openai/gpt-4o-mini");
+  });
+
+  it("records errors from sync functions", () => {
+    const sink = new TestSink();
+
+    function compute(model: { provider: string; id: string }) {
+      throw new Error("sync failure");
+    }
+
+    const wrapped = shunt(compute, sink);
+
+    expect(() =>
+      wrapped({ provider: "openai", id: "gpt-4" }),
+    ).toThrow("sync failure");
+
+    expect(sink.records).toHaveLength(1);
+    expect(sink.records[0].error).toBe("Error: sync failure");
+  });
+
+  it("falls back to { args } when second arg is not an object", async () => {
+    const sink = new TestSink();
+
+    async function complete(model: unknown, count: number) {
+      return "ok";
+    }
+
+    const wrapped = shunt(complete, sink);
+    await wrapped({ provider: "openai", id: "gpt-4o-mini" }, 42);
+
+    expect(sink.records[0].request).toEqual({
+      args: [{ provider: "openai", id: "gpt-4o-mini" }, 42],
+    });
+  });
+});
+
 describe("SinkStream", () => {
   it("writes JSON lines to stream", () => {
     const chunks: string[] = [];

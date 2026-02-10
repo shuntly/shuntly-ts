@@ -69,23 +69,45 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
 
 /**
  * Wrap an async iterable to accumulate chunks while proxying iteration.
+ * Preserves extra methods/properties from the original iterable (e.g. `.result()`).
  */
-async function* wrapAsyncIterable(
+function wrapAsyncIterable(
   iterable: AsyncIterable<unknown>,
   onComplete: (chunks: unknown[]) => void,
   onError: (error: Error) => void,
 ): AsyncIterable<unknown> {
-  const chunks: unknown[] = [];
-  try {
-    for await (const chunk of iterable) {
-      chunks.push(chunk);
-      yield chunk;
+  async function* generate(): AsyncIterable<unknown> {
+    const chunks: unknown[] = [];
+    try {
+      for await (const chunk of iterable) {
+        chunks.push(chunk);
+        yield chunk;
+      }
+      onComplete(chunks);
+    } catch (error) {
+      onError(error as Error);
+      throw error;
     }
-    onComplete(chunks);
-  } catch (error) {
-    onError(error as Error);
-    throw error;
   }
+
+  const gen = generate();
+
+  // Copy over any extra methods/properties from the original iterable
+  // (e.g. pi-ai's .result() on AssistantMessageEventStream)
+  if (typeof iterable === "object" && iterable !== null) {
+    for (const key of Object.keys(iterable)) {
+      if (!(key in gen)) {
+        const value = (iterable as unknown as AnyObject)[key];
+        if (typeof value === "function") {
+          (gen as unknown as AnyObject)[key] = value.bind(iterable);
+        } else {
+          (gen as unknown as AnyObject)[key] = value;
+        }
+      }
+    }
+  }
+
+  return gen;
 }
 
 /**
@@ -168,19 +190,128 @@ function createWrapper(
 }
 
 /**
+ * Derive a client name from a pi-ai-style model object.
+ * If the first arg has string `provider` and `id` properties, returns "provider/id".
+ * Otherwise returns "Unknown".
+ */
+function deriveClientName(firstArg: unknown): string {
+  if (
+    firstArg !== null &&
+    typeof firstArg === "object" &&
+    "provider" in firstArg &&
+    "id" in firstArg &&
+    typeof (firstArg as AnyObject).provider === "string" &&
+    typeof (firstArg as AnyObject).id === "string"
+  ) {
+    return `${(firstArg as AnyObject).provider}/${(firstArg as AnyObject).id}`;
+  }
+  return "Unknown";
+}
+
+/**
  * Wrap an LLM client to record all API calls.
- *
- * @param client - The LLM client instance (Anthropic, OpenAI, etc.)
- * @param sink - Where to write records (defaults to stderr)
- * @param methods - Optional list of dotted method paths to patch
- * @returns The same client instance (modified in place)
  */
 export function shunt<T extends object>(
   client: T,
   sink?: Sink | null,
   methods?: string[],
-): T {
+): T;
+
+/**
+ * Wrap a standalone function (e.g. pi-ai's `complete` or `stream`) to record calls.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function shunt<F extends (...args: any[]) => any>(
+  fn: F,
+  sink?: Sink | null,
+): F;
+
+export function shunt(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  clientOrFn: object | ((...args: any[]) => any),
+  sink?: Sink | null,
+  methods?: string[],
+): unknown {
   const actualSink = sink ?? new SinkStream();
+
+  // Standalone function overload
+  if (typeof clientOrFn === "function" && methods === undefined) {
+    const fn = clientOrFn as (...args: unknown[]) => unknown;
+    const methodName = fn.name || "anonymous";
+
+    const wrapper = function (this: unknown, ...args: unknown[]): unknown {
+      const startTime = performance.now();
+      const clientName = deriveClientName(args[0]);
+
+      // Capture request: if 2+ args and args[1] is an object, use it; else fall back
+      const request: AnyObject =
+        args.length >= 2 &&
+        args[1] !== null &&
+        typeof args[1] === "object" &&
+        !Array.isArray(args[1])
+          ? (args[1] as AnyObject)
+          : { args };
+
+      const recordAndWrite = (response: unknown, err: string | null) => {
+        const durationMs = performance.now() - startTime;
+        const record = ShuntlyRecord.build({
+          client: clientName,
+          method: methodName,
+          request,
+          response,
+          durationMs,
+          error: err,
+        });
+        actualSink.write(record);
+      };
+
+      try {
+        const result = fn.apply(this, args);
+
+        if (isPromise(result)) {
+          return result.then(
+            (resolved) => {
+              if (isAsyncIterable(resolved)) {
+                return wrapAsyncIterable(
+                  resolved,
+                  (chunks) => recordAndWrite(chunks, null),
+                  (err) => recordAndWrite(null, `${err.name}: ${err.message}`),
+                );
+              }
+              recordAndWrite(resolved, null);
+              return resolved;
+            },
+            (err: Error) => {
+              recordAndWrite(null, `${err.name}: ${err.message}`);
+              throw err;
+            },
+          );
+        }
+
+        if (isAsyncIterable(result)) {
+          return wrapAsyncIterable(
+            result,
+            (chunks) => recordAndWrite(chunks, null),
+            (err) => recordAndWrite(null, `${err.name}: ${err.message}`),
+          );
+        }
+
+        recordAndWrite(result, null);
+        return result;
+      } catch (err) {
+        recordAndWrite(null, `${(err as Error).name}: ${(err as Error).message}`);
+        throw err;
+      }
+    };
+
+    // Preserve function name for debugging
+    Object.defineProperty(wrapper, "name", { value: methodName });
+
+    return wrapper as typeof fn;
+  }
+
+  // Object/client overload (existing behavior)
+  const client = clientOrFn as object;
   const clientName = getClientName(client);
   if (!methods) {
     methods = METHOD_REGISTRY.get(clientName);
