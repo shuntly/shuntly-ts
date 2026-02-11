@@ -156,6 +156,19 @@ Shuntly presently handles these clients:
 | `OpenAI`      | [`npm`](https://www.npmjs.com/package/openai)            | `chat.completions.create`                                |
 | `GoogleGenAI` | [`npm`](https://www.npmjs.com/package/@google/genai)     | `models.generateContent`, `models.generateContentStream` |
 
+Shuntly also supports wrapping standalone functions, such as those from [`@mariozechner/pi-ai`](https://www.npmjs.com/package/@mariozechner/pi-ai):
+
+| Function   | Description                                      |
+| ---------- | ------------------------------------------------ |
+| `complete` | Non-streaming completion (returns `Promise`)     |
+| `stream`   | Streaming completion (returns async iterable)    |
+
+```typescript
+import { complete, stream } from "@mariozechner/pi-ai";
+const complete = shunt(complete, sink);
+const stream = shunt(stream, sink);
+```
+
 For anything else, method paths can be explicitly provided:
 
 ```typescript
