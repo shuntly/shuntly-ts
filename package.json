@@ -5,6 +5,11 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
+  "homepage": "https://shuntly.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shuntly/shuntly-ts.git"
+  },
   "files": [
     "dist"
   ],
