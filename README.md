@@ -177,6 +177,11 @@ const client = shunt(myClient, null, ["chat.send", "embeddings.create"]);
 
 ## What is New in Shuntly
 
+
+### 0.6.0
+
+Added support for pi-ai interfaces `complete` and `stream`.
+
 ### 0.5.0
 
 Corrected interleaved writes in `SinkPipe`.
