@@ -25,9 +25,7 @@ maybe("anthropic adhoc", () => {
     const resp = await client.messages.create({
       model: MODEL,
       max_tokens: 32,
-      messages: [
-        { role: "user", content: "Reply with the single word: pong" },
-      ],
+      messages: [{ role: "user", content: "Reply with the single word: pong" }],
     });
 
     // Assert on the live response
@@ -35,9 +33,7 @@ maybe("anthropic adhoc", () => {
     expect(resp.model).toMatch(/^claude/);
     expect(["end_turn", "max_tokens"]).toContain(resp.stop_reason);
     const text =
-      resp.content[0].type === "text"
-        ? resp.content[0].text.toLowerCase()
-        : "";
+      resp.content[0].type === "text" ? resp.content[0].text.toLowerCase() : "";
     expect(text).toBe("pong");
 
     // Assert on the captured record
@@ -79,7 +75,9 @@ maybe("anthropic adhoc", () => {
 
     // Iterate events and extract text deltas
     const textParts: string[] = [];
-    for await (const event of stream as AsyncIterable<Record<string, unknown>>) {
+    for await (const event of stream as AsyncIterable<
+      Record<string, unknown>
+    >) {
       const ev = event as {
         type: string;
         delta?: { type: string; text?: string };

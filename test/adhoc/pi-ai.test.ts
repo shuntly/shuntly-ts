@@ -72,7 +72,9 @@ maybe("pi-ai adhoc", () => {
 
     // Iterate events and extract text deltas
     const textParts: string[] = [];
-    for await (const event of eventStream as AsyncIterable<Record<string, unknown>>) {
+    for await (const event of eventStream as AsyncIterable<
+      Record<string, unknown>
+    >) {
       const ev = event as { type: string; delta?: string };
       if (ev.type === "text_delta" && ev.delta) {
         textParts.push(ev.delta);

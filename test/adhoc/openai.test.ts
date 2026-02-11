@@ -24,9 +24,7 @@ maybe("openai adhoc", () => {
 
     const resp = await client.chat.completions.create({
       model: MODEL,
-      messages: [
-        { role: "user", content: "Reply with the single word: pong" },
-      ],
+      messages: [{ role: "user", content: "Reply with the single word: pong" }],
     });
 
     // Assert on the live response
@@ -75,7 +73,9 @@ maybe("openai adhoc", () => {
 
     // Iterate chunks and extract text deltas
     const textParts: string[] = [];
-    for await (const chunk of stream as AsyncIterable<Record<string, unknown>>) {
+    for await (const chunk of stream as AsyncIterable<
+      Record<string, unknown>
+    >) {
       const c = chunk as {
         choices: Array<{ delta: { content?: string | null } }>;
       };
