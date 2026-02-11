@@ -65,9 +65,10 @@ maybe("anthropic adhoc", () => {
       new SinkStream(writable),
     );
 
-    const stream = client.messages.stream({
+    const stream = await client.messages.create({
       model: MODEL,
       max_tokens: 32,
+      stream: true,
       messages: [
         {
           role: "user",
@@ -98,7 +99,8 @@ maybe("anthropic adhoc", () => {
     // Assert on the captured record
     const record = JSON.parse(sinkLines[0].trim());
     expect(record.client).toBe("Anthropic");
-    expect(record.method).toBe("messages.stream");
+    expect(record.method).toBe("messages.create");
+    expect(record.request.stream).toBe(true);
     expect(record.request.model).toBe(MODEL);
     expect(record.error).toBeNull();
     expect(record.durationMs).toBeGreaterThan(0);

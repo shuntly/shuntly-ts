@@ -28,7 +28,7 @@ maybe("google adhoc", () => {
     });
 
     // Assert on the live response
-    const text = (resp.text ?? "").toLowerCase();
+    const text = (resp.text ?? "").trim().toLowerCase();
     expect(text).toBe("pong");
 
     // Assert on the captured record

@@ -234,7 +234,7 @@ export function shunt(
 ): unknown {
   const actualSink = sink ?? new SinkStream();
 
-  // Standalone function overload
+  // Standalone function overload, as with pi-ai
   if (typeof clientOrFn === "function" && methods === undefined) {
     const fn = clientOrFn as (...args: unknown[]) => unknown;
     const methodName = fn.name || "anonymous";
@@ -244,6 +244,7 @@ export function shunt(
       const clientName = deriveClientName(args[0]);
 
       // Capture request: if 2+ args and args[1] is an object, use it; else fall back
+      // if pi-ai, args are model, context
       const request: AnyObject =
         args.length >= 2 &&
         args[1] !== null &&
@@ -309,11 +310,10 @@ export function shunt(
 
     // Preserve function name for debugging
     Object.defineProperty(wrapper, "name", { value: methodName });
-
     return wrapper as typeof fn;
   }
 
-  // Object/client overload (existing behavior)
+  // Object/client wrapper
   const client = clientOrFn as object;
   const clientName = getClientName(client);
   if (!methods) {
