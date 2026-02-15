@@ -158,15 +158,19 @@ Shuntly presently handles these clients:
 
 Shuntly also supports wrapping standalone functions, such as those from [`@mariozechner/pi-ai`](https://www.npmjs.com/package/@mariozechner/pi-ai):
 
-| Function   | Description                                      |
-| ---------- | ------------------------------------------------ |
-| `complete` | Non-streaming completion (returns `Promise`)     |
-| `stream`   | Streaming completion (returns async iterable)    |
+| Function         | Description                                      |
+| ---------------- | ------------------------------------------------ |
+| `complete`       | Non-streaming completion (returns `Promise`)     |
+| `completeSimple` | Non-streaming with reasoning options             |
+| `stream`         | Streaming completion (returns async iterable)    |
+| `streamSimple`   | Streaming with reasoning options                 |
 
 ```typescript
-import { complete, stream } from "@mariozechner/pi-ai";
+import { complete, completeSimple, stream, streamSimple } from "@mariozechner/pi-ai";
 const complete = shunt(complete, sink);
+const completeSimple = shunt(completeSimple, sink);
 const stream = shunt(stream, sink);
+const streamSimple = shunt(streamSimple, sink);
 ```
 
 For anything else, method paths can be explicitly provided:
