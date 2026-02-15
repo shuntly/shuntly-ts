@@ -69,45 +69,62 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
 
 /**
  * Wrap an async iterable to accumulate chunks while proxying iteration.
- * Preserves extra methods/properties from the original iterable (e.g. `.result()`).
+ *
+ * Instead of replacing the iterable with a generator, this overrides
+ * [Symbol.asyncIterator] on the original object. This preserves the object's
+ * identity, prototype, and any extra methods (e.g. `.push()`, `.result()` on
+ * pi-ai's push-based EventStream), which is critical when the producer holds
+ * a reference to the original object and calls methods on it after creation.
  */
 function wrapAsyncIterable(
   iterable: AsyncIterable<unknown>,
   onComplete: (chunks: unknown[]) => void,
   onError: (error: Error) => void,
 ): AsyncIterable<unknown> {
-  async function* generate(): AsyncIterable<unknown> {
+  const originalMethod = iterable[Symbol.asyncIterator].bind(iterable);
+  let wrapped = false;
+
+  (iterable as { [Symbol.asyncIterator]: () => AsyncIterator<unknown> })[
+    Symbol.asyncIterator
+  ] = function (): AsyncIterator<unknown> {
+    // Only instrument the first iteration; subsequent calls get the original
+    // iterator to avoid double-recording.
+    if (wrapped) {
+      return originalMethod();
+    }
+    wrapped = true;
+
+    const iter = originalMethod();
     const chunks: unknown[] = [];
-    try {
-      for await (const chunk of iterable) {
-        chunks.push(chunk);
-        yield chunk;
-      }
-      onComplete(chunks);
-    } catch (error) {
-      onError(error as Error);
-      throw error;
-    }
-  }
 
-  const gen = generate();
-
-  // Copy over any extra methods/properties from the original iterable
-  // (e.g. pi-ai's .result() on AssistantMessageEventStream)
-  if (typeof iterable === "object" && iterable !== null) {
-    for (const key of Object.keys(iterable)) {
-      if (!(key in gen)) {
-        const value = (iterable as unknown as AnyObject)[key];
-        if (typeof value === "function") {
-          (gen as unknown as AnyObject)[key] = value.bind(iterable);
-        } else {
-          (gen as unknown as AnyObject)[key] = value;
+    return {
+      async next(): Promise<IteratorResult<unknown>> {
+        try {
+          const result = await iter.next();
+          if (result.done) {
+            onComplete(chunks);
+          } else {
+            chunks.push(result.value);
+          }
+          return result;
+        } catch (error) {
+          onError(error as Error);
+          throw error;
         }
-      }
-    }
-  }
+      },
+      async return(value?: unknown): Promise<IteratorResult<unknown>> {
+        onComplete(chunks);
+        return iter.return ? iter.return(value) : { value, done: true };
+      },
+      async throw(error?: unknown): Promise<IteratorResult<unknown>> {
+        onError(error instanceof Error ? error : new Error(String(error)));
+        if (iter.throw) return iter.throw(error);
+        throw error;
+      },
+    };
+  };
 
-  return gen;
+  return iterable;
 }
 
 /**
