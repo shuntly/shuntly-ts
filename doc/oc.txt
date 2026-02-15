@@ -77,4 +77,127 @@
   becomes a pure plugin with zero core changes.
 
 
+====================
+Node 22 has a module.register() API. You create two files:
 
+ 1. Preload script (e.g., shuntly-preload.mjs)
+ - This runs before any application code
+ - It calls module.register('./shuntly-load er.mjs', import.meta.url) to install a custom loader
+ - That's all it does
+
+ 2. Loader hook (e.g., shuntly-loader.mjs)
+ - Exports a load(url, context, nextLoad) function
+ - Node calls this for every ESM import
+ - For most modules: passes through to nextLoad() unchanged
+ - When url matches @mariozechner/pi-ai (specifically the resolved path ending in /pi-ai/dist/index.js):
+     - Calls nextLoad() to get the original source
+     - Returns a modified source that:
+           1. Re-exports everything from the original module unchanged
+           2. Except complete, completeSimple, stream, streamSimple — these get wrapped with shunt() from shuntly
+           3. The shunt calls are configured with a sink (e.g., SinkFile('/home/ubuntu/.opencla w/shuntly.jsonl'))
+
+ 3. Launching OpenClaw with it
+ - Set NODE_OPTIONS="--import=/path/to /shuntly-preload.mjs" in the environment
+ - This could go in a systemd override, a wrapper script, or OpenClaw's own config if it supports env vars
+ - OpenClaw launches normally, but Node's module system now has the hook installed
+
+ ### What happens at runtime
+
+ 1. Node starts, runs shuntly-preload.mjs first
+ 2. Loader hook registers
+ 3. OpenClaw code loads, imports @mariozechner/pi-ai
+ 4. Loader intercepts, wraps complete/completeSimple/str eamSimple with shuntly
+ 5. OpenClaw gets back wrapped functions — same types, same interface
+ 6. Every LLM call writes a JSON record to the sink
+
+
+
+=====================================
+
+Here's exactly what patching pi-ai/dist/stream.js would involve:
+
+ ### The file
+
+/usr/lib/node_modules/openclaw/node_modules/@mariozechner/pi-ai/dist/stream.js
+
+ ### What's there now
+
+ Four exported functions at the top level:
+
+ ```js
+   export function stream(model, context, options) { ... }
+   export async function complete(model, context, options) { ... }
+   export function streamSimple(model, context, options) { ... }
+   export async function completeSimple(model, context, options) { ... }
+ ```
+
+ ### The changes
+
+ 1. Install shuntly globally or into pi-ai's node_modules so it's resolvable:
+   ```
+     npm install -g shuntly
+   ```
+   (or npm install shuntly inside the pi-ai package dir)
+ 2. Add a shuntly import at the top of stream.js:
+   ```js
+     import { shunt, SinkFile } from "shuntly";
+   ```
+ 3. Rename the four original exports — e.g., stream → _stream_orig, complete → _complete_orig, etc.
+ 4. Add wrapped re-exports at the bottom:
+   ```js
+     const _sink = new SinkFile("/home/ubuntu/.openclaw /shuntly.jsonl");
+     export const stream = shunt(_stream_orig, _sink);
+     export const complete = shunt(_complete_orig, _sink);
+     export const streamSimple = shunt(_streamSimple_orig, _sink);
+     export const completeSimple = shunt(_completeSimple_orig, _sink);
+   ```
+
+
+cat /usr/lib/node_modules/openclaw/node_modules/@mariozechner/pi-ai/dist/stream
+.js
+
+
+   cd /usr/lib/node_modules/openclaw
+   npm install shuntly
+
+
+
+
+ ### Problems
+
+ - Export syntax conflict: You can't have export function stream(...) and export const stream = ... in the same
+ file. So step 3 means actually editing the function declarations to remove export and rename them — touching the
+ body of a ~200+ line file.
+ - ESM resolution: shuntly needs to be importable from that file's location. Global installs may not resolve from
+ inside /usr/lib/node_modules/openclaw/node_modules/@mariozechner/pi-ai /dist/. Might need a relative path or
+ symlink.
+ - shunt() on bare functions: Shuntly's shunt() for standalone functions returns a wrapped function — but the
+ originals here are export function declarations, not class instances. Shuntly docs say this works for pi-ai
+ functions specifically, so it should be fine.
+ - Source map breakage: The .map file becomes invalid. Minor, but affects debugging.
+ - Updates nuke it: Any openclaw update reinstalls node_modules and your patch is gone.
+ - Rollback: You'd want to cp stream.js stream.js.bak first so you can restore without reinstalling.
+
+ ### Total: ~6 edits to one file, plus an npm install
+
+ Not huge, but fiddly — and the ESM import resolution is the part most likely to bite you.
+
+
+
+  Here's what it does:
+
+ 1. npm install shuntly inside /usr/lib/node_modules/openclaw
+ 2. Backs up stream.js → stream.js.bak (won't overwrite existing backup)
+ 3. Replaces stream.js with a patched version that:
+     - Imports shunt and SinkFile from shuntly
+     - Renames the four functions to _stream, _complete, _streamSimple, _completeSimple
+     - Re-exports them wrapped via shunt(), writing to ~/.openclaw/shuntly.jsonl
+ 4. Prints revert instructions
+
+ To revert: cp stream.js.bak stream.js and restart.
+
+ Review it, and when you're ready: sudo bash install-shuntly.sh (needs sudo for /usr/lib). Then openclaw gateway
+ restart.
+
+
+ ==
