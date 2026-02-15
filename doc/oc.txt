@@ -1,0 +1,80 @@
+
+
+⏺ The most natural approach is to build it into openclaw as a config-driven feature, since the wrapping pattern
+  already exists (extra-params does exactly this). Users would just add a config option.
+
+  Option 1: Native config in openclaw (cleanest)
+
+  Add to config.yaml:
+  shuntly:
+    enabled: true
+    sink: file          # file | stream | pipe
+    path: ~/.openclaw/shuntly.jsonl
+
+  Then in attempt.ts, after the streamFn assignment and extra-params wrapping, one more wrapper:
+
+  if (shuntlyConfig?.enabled) {
+    activeSession.agent.streamFn = shunt(activeSession.agent.streamFn, sink);
+  }
+
+  This composes with the existing wrapping chain: streamSimple → extra-params wrapper → shuntly wrapper. Users deploy
+  with a config change and a restart.
+
+  Option 2: openclaw extension/plugin (if the extension system supports it)
+
+  If openclaw's plugin system can hook into the agent lifecycle, shuntly could be packaged as a standalone plugin that
+   users install and enable.
+
+  Option 3: Environment variable toggle (zero-config)
+
+  OPENCLAW_SHUNTLY=~/.openclaw/shuntly.jsonl openclaw gateway
+
+  Simplest for users, no config file changes needed.
+
+  ---
+  Option 1 is probably the right call — it follows the existing pattern in extra-params.ts, it's a small PR to
+  openclaw (add shuntly dep, ~10 lines in attempt.ts, config schema addition), and users just toggle a config flag.
+  The scattered complete() calls in image-tool/model-scan/tts could be wrapped at the same time with a shared sink
+  instance.
+
+
+  ====================
+
+
+
+⏺ The plugin system is mature but operates one level above where shuntly needs to hook in. Here's the gap:
+
+  What the plugin system has:
+  - before_agent_start — can inject context/system prompt, but can't touch streamFn
+  - agent_end — gets duration/success/error after the fact
+  - before_tool_call / after_tool_call — tool execution tracking
+  - message_sending / message_sent — outbound message hooks
+
+  What shuntly needs:
+  - Access to wrap activeSession.agent.streamFn before the agent runs
+
+  The plugin hooks capture metadata around the LLM call, but not the raw request/response payloads at the streaming
+  transport level. There's no hook that gives a plugin access to the agent's streamFn to wrap it.
+
+  The fix is small. Openclaw would need one new hook — something like configure_agent — that fires right after the
+  streamFn is assigned in attempt.ts and lets plugins modify it:
+
+  // In attempt.ts, after streamFn assignment + extra-params wrapping:
+  const hookResult = await runHook("configure_agent", { agent: activeSession.agent });
+
+  Then a shuntly plugin would be:
+
+  export default definePlugin(async (api) => {
+    const sink = new SinkFile("~/.openclaw/shuntly.jsonl");
+
+    api.on("configure_agent", ({ agent }) => {
+      agent.streamFn = shunt(agent.streamFn, sink);
+    });
+  });
+
+  So the answer is: the plugin system is 90% there, but needs one new lifecycle hook in openclaw to expose the
+  streamFn. That's a ~5-line change to openclaw's core (in attempt.ts) plus the hook type definition. Then shuntly
+  becomes a pure plugin with zero core changes.
+
+
+
