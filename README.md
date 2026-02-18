@@ -10,7 +10,7 @@ A lightweight wiretap for LLM SDKs: capture all requests and responses with a si
 
 Shuntly wraps LLM SDKs to record every request and response as JSON. Calling `shunt()` wraps and returns a client with its original interface and types preserved, permitting consistent IDE autocomplete and type checking. Shuntly provides a collection of configurable "sinks" to write records to stderr, files, named pipes, or any combination.
 
-While debugging LLM tooling, maybe you want to see exactly what is being sent and returned. When launching an agent, maybe you want to record every call to the LLM. Shuntly can capture it all without TLS interception, a web-based platform, or complicated logging infrastructure.
+While debugging LLM tooling, maybe you want to see exactly what is being sent and returned. When launching an agent, maybe you want to record every call to the LLM. Shuntly can capture it all without TLS interception, a proxy or web-based platform, or complicated logging infrastructure.
 
 ## Install
 
@@ -118,6 +118,27 @@ Then, after your command is complete, view the file:
 $ fx /tmp/shuntly.jsonl
 ```
 
+### Store Shuntly Output with File Rotation
+
+For long-running applications, `SinkRotating` writes JSONL records to a directory with automatic file rotation and cleanup. Files are named with UTC timestamps (e.g. `2025-02-15T210530.482Z.jsonl`).
+
+```typescript
+import { shunt, SinkRotating } from "shuntly";
+const client = shunt(new Anthropic({ apiKey: API_KEY }), new SinkRotating("/tmp/shuntly"));
+```
+
+When a file exceeds `maxBytesFile` (default 10 MB), a new file is created. When the directory exceeds `maxBytesDir` (default 100 MB), the oldest files are pruned. Set `maxBytesDir: 0` to disable pruning and retain all files. Both limits are configurable:
+
+```typescript
+const client = shunt(
+  new Anthropic({ apiKey: API_KEY }),
+  new SinkRotating("/tmp/shuntly", {
+    maxBytesFile: 50 * 1024 * 1024, // 50 MB per file
+    maxBytesDir: 500 * 1024 * 1024, // 500 MB total
+  }),
+);
+```
+
 ### Send Shuntly Output to Multiple Sinks
 
 Using `SinkMany`, multiple sinks can be written to simultaneously.
@@ -180,6 +201,10 @@ const client = shunt(myClient, null, ["chat.send", "embeddings.create"]);
 ```
 
 ## What is New in Shuntly
+
+### dev
+
+Added new `SinkRotating` for rotating log handling.
 
 ### 0.7.0
 
