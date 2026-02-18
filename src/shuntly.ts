@@ -81,18 +81,20 @@ function wrapAsyncIterable(
   onComplete: (chunks: unknown[]) => void,
   onError: (error: Error) => void,
 ): AsyncIterable<unknown> {
+  // bind extracted method to retain `this`
   const originalMethod = iterable[Symbol.asyncIterator].bind(iterable);
-  let wrapped = false;
+  let recorded = false;
 
+  // cast iterable as an object that has an Symbol.asyncIterator key; then assign-in the new function in the same key.
   (iterable as { [Symbol.asyncIterator]: () => AsyncIterator<unknown> })[
     Symbol.asyncIterator
   ] = function (): AsyncIterator<unknown> {
     // Only instrument the first iteration; subsequent calls get the original
     // iterator to avoid double-recording.
-    if (wrapped) {
+    if (recorded) {
       return originalMethod();
     }
-    wrapped = true;
+    recorded = true;
 
     const iter = originalMethod();
     const chunks: unknown[] = [];
@@ -112,6 +114,7 @@ function wrapAsyncIterable(
           throw error;
         }
       },
+      // if iteration stops early
       async return(value?: unknown): Promise<IteratorResult<unknown>> {
         onComplete(chunks);
         return iter.return ? iter.return(value) : { value, done: true };
