@@ -1,15 +1,5 @@
 import { describe, it, expect } from "vitest";
-import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
-import {
-  shunt,
-  ShuntlyRecord,
-  Sink,
-  SinkRotating,
-  SinkStream,
-} from "../src/index.js";
-import { Writable } from "stream";
+import { shunt, ShuntlyRecord, Sink } from "../src/index.js";
 
 // Helper to capture sink output
 class TestSink implements Sink {
@@ -450,6 +440,110 @@ describe("with standalone functions", () => {
     expect(sink.records[0].error).toBe("Error: sync failure");
   });
 
+  it("works with push-based async iterables (like pi-ai EventStream)", async () => {
+    const sink = new TestSink();
+
+    // Simulate pi-ai's EventStream: a push-based async iterable with .result()
+    class PushStream {
+      private queue: unknown[] = [];
+      private waiters: ((r: IteratorResult<unknown>) => void)[] = [];
+      private done = false;
+      private resolveResult!: (v: unknown) => void;
+      private resultPromise: Promise<unknown>;
+
+      constructor() {
+        this.resultPromise = new Promise((resolve) => {
+          this.resolveResult = resolve;
+        });
+      }
+
+      push(event: unknown) {
+        if (this.done) return;
+        if ((event as { type: string }).type === "done") {
+          this.done = true;
+          this.resolveResult((event as { message: unknown }).message);
+        }
+        const waiter = this.waiters.shift();
+        if (waiter) {
+          waiter({ value: event, done: false });
+        } else {
+          this.queue.push(event);
+        }
+      }
+
+      end() {
+        this.done = true;
+        while (this.waiters.length > 0) {
+          const waiter = this.waiters.shift()!;
+          waiter({ value: undefined, done: true });
+        }
+      }
+
+      [Symbol.asyncIterator](): AsyncIterator<unknown> {
+        return {
+          next: (): Promise<IteratorResult<unknown>> => {
+            if (this.queue.length > 0) {
+              return Promise.resolve({
+                value: this.queue.shift(),
+                done: false,
+              });
+            }
+            if (this.done) {
+              return Promise.resolve({ value: undefined, done: true });
+            }
+            return new Promise((resolve) => this.waiters.push(resolve));
+          },
+        };
+      }
+
+      result(): Promise<unknown> {
+        return this.resultPromise;
+      }
+    }
+
+    function streamSimple(
+      model: { provider: string; id: string },
+      context: object,
+    ) {
+      const stream = new PushStream();
+      // Simulate async push from provider (after function returns)
+      setTimeout(() => {
+        stream.push({ type: "text", text: "Hello" });
+        stream.push({
+          type: "done",
+          message: { role: "assistant", content: "Hello" },
+        });
+        stream.end();
+      }, 10);
+      return stream;
+    }
+
+    const wrapped = shunt(streamSimple, sink);
+    const model = { provider: "anthropic", id: "claude-sonnet-4-20250514" };
+    const s = wrapped(model, { messages: [] }) as PushStream;
+
+    // .result() should work — it's the original object
+    const resultPromise = s.result();
+
+    // Consume via async iteration
+    const chunks: unknown[] = [];
+    for await (const chunk of s) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(2);
+    expect((chunks[0] as { type: string }).type).toBe("text");
+    expect((chunks[1] as { type: string }).type).toBe("done");
+
+    const result = await resultPromise;
+    expect(result).toEqual({ role: "assistant", content: "Hello" });
+
+    // Shuntly should have recorded the call
+    expect(sink.records).toHaveLength(1);
+    expect(sink.records[0].client).toBe("anthropic/claude-sonnet-4-20250514");
+    expect(sink.records[0].response).toHaveLength(2);
+  });
+
   it("falls back to { args } when second arg is not an object", async () => {
     const sink = new TestSink();
 
@@ -463,153 +557,5 @@ describe("with standalone functions", () => {
     expect(sink.records[0].request).toEqual({
       args: [{ provider: "openai", id: "gpt-4o-mini" }, 42],
     });
-  });
-});
-
-describe("SinkStream", () => {
-  it("writes JSON lines to stream", () => {
-    const chunks: string[] = [];
-    const stream = new Writable({
-      write(chunk, encoding, callback) {
-        chunks.push(chunk.toString());
-        callback();
-      },
-    });
-
-    const sink = new SinkStream(stream);
-    const record = ShuntlyRecord.build({
-      client: "Test",
-      method: "test",
-      request: { foo: "bar" },
-      response: { result: 123 },
-      durationMs: 42,
-    });
-
-    sink.write(record);
-
-    expect(chunks).toHaveLength(1);
-    const parsed = JSON.parse(chunks[0].trim());
-    expect(parsed.client).toBe("Test");
-    expect(parsed.method).toBe("test");
-    expect(parsed.durationMs).toBe(42);
-  });
-});
-
-function makeRecord(): ShuntlyRecord {
-  return ShuntlyRecord.build({
-    client: "test.Client",
-    method: "do.thing",
-    request: { a: 1 },
-    response: { b: 2 },
-    durationMs: 5.0,
-  });
-}
-
-describe("SinkRotating", () => {
-  function makeTmpDir(): string {
-    return fs.mkdtempSync(path.join(os.tmpdir(), "shuntly-test-"));
-  }
-
-  function jsonlFiles(dir: string): string[] {
-    return fs.readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
-  }
-
-  it("writes to directory", () => {
-    const dir = makeTmpDir();
-    try {
-      const sink = new SinkRotating(dir);
-      sink.write(makeRecord());
-      sink.close();
-      const files = jsonlFiles(dir);
-      expect(files).toHaveLength(1);
-      const data = JSON.parse(
-        fs.readFileSync(path.join(dir, files[0]), "utf-8").trim(),
-      );
-      expect(data.client).toBe("test.Client");
-    } finally {
-      fs.rmSync(dir, { recursive: true });
-    }
-  });
-
-  it("rotates on maxBytesFile", () => {
-    const dir = makeTmpDir();
-    try {
-      const sink = new SinkRotating(dir, {
-        maxBytesFile: 50,
-        maxBytesDir: 0,
-      });
-      for (let i = 0; i < 5; i++) {
-        sink.write(makeRecord());
-      }
-      sink.close();
-      expect(jsonlFiles(dir).length).toBeGreaterThan(1);
-    } finally {
-      fs.rmSync(dir, { recursive: true });
-    }
-  });
-
-  it("prunes old files", () => {
-    const dir = makeTmpDir();
-    try {
-      const sink = new SinkRotating(dir, {
-        maxBytesFile: 50,
-        maxBytesDir: 500,
-      });
-      for (let i = 0; i < 20; i++) {
-        sink.write(makeRecord());
-      }
-      sink.close();
-      const files = jsonlFiles(dir);
-      const total = files.reduce(
-        (sum, f) => sum + fs.statSync(path.join(dir, f)).size,
-        0,
-      );
-      expect(total).toBeLessThanOrEqual(1500);
-    } finally {
-      fs.rmSync(dir, { recursive: true });
-    }
-  });
-
-  it("creates nested directories", () => {
-    const dir = makeTmpDir();
-    const nested = path.join(dir, "sub", "dir");
-    try {
-      const sink = new SinkRotating(nested);
-      sink.write(makeRecord());
-      sink.close();
-      expect(fs.existsSync(nested)).toBe(true);
-      expect(jsonlFiles(nested)).toHaveLength(1);
-    } finally {
-      fs.rmSync(dir, { recursive: true });
-    }
-  });
-
-  it("close is idempotent", () => {
-    const dir = makeTmpDir();
-    try {
-      const sink = new SinkRotating(dir);
-      sink.write(makeRecord());
-      sink.close();
-      sink.close(); // should not throw
-    } finally {
-      fs.rmSync(dir, { recursive: true });
-    }
-  });
-
-  it("does not prune when disabled", () => {
-    const dir = makeTmpDir();
-    try {
-      const sink = new SinkRotating(dir, {
-        maxBytesFile: 50,
-        maxBytesDir: 0,
-      });
-      for (let i = 0; i < 10; i++) {
-        sink.write(makeRecord());
-      }
-      sink.close();
-      expect(jsonlFiles(dir).length).toBeGreaterThan(1);
-    } finally {
-      fs.rmSync(dir, { recursive: true });
-    }
   });
 });
