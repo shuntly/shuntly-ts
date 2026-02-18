@@ -139,6 +139,117 @@ export class SinkPipe implements Sink {
 }
 
 /**
+ * Writes JSONL files into a directory with automatic rotation and pruning.
+ *
+ * Each file is named with an ISO-8601 timestamp (e.g.
+ * `2025-02-15T210530.482371Z.jsonl`). A new file is started when the current
+ * file reaches `maxBytesFile`. Old files are removed when total directory
+ * size exceeds `maxBytesDir` (oldest first).
+ */
+export class SinkRotating implements Sink {
+  private static readonly DEFAULT_MAX_BYTES_FILE = 10 * 1024 * 1024; // 10 MB
+  private static readonly DEFAULT_MAX_BYTES_DIR = 100 * 1024 * 1024; // 100 MB
+
+  private directory: string;
+  private maxBytesFile: number;
+  private maxBytesDir: number;
+  private fd: number | null = null;
+  private filePath: string | null = null;
+  private fileSize: number = 0;
+
+  constructor(
+    directory: string,
+    options?: {
+      maxBytesFile?: number;
+      maxBytesDir?: number;
+    },
+  ) {
+    this.directory = directory;
+    this.maxBytesFile =
+      options?.maxBytesFile ?? SinkRotating.DEFAULT_MAX_BYTES_FILE;
+    this.maxBytesDir =
+      options?.maxBytesDir ?? SinkRotating.DEFAULT_MAX_BYTES_DIR;
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
+  private static makeFilename(): string {
+    const now = new Date();
+    const pad = (n: number, w: number = 2) => String(n).padStart(w, "0");
+    const ts =
+      `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}` +
+      `T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}` +
+      `.${pad(now.getUTCMilliseconds(), 3)}${pad(Math.floor(Math.random() * 1000), 3)}Z`;
+    return `${ts}.jsonl`;
+  }
+
+  private openNewFile(): number {
+    if (this.fd !== null) {
+      fs.closeSync(this.fd);
+    }
+    const name = SinkRotating.makeFilename();
+    this.filePath = `${this.directory}/${name}`;
+    this.fd = fs.openSync(this.filePath, "a");
+    this.fileSize = 0;
+    return this.fd;
+  }
+
+  private prune(): void {
+    if (this.maxBytesDir <= 0) {
+      return;
+    }
+    const entries: { path: string; size: number }[] = [];
+    for (const entry of fs.readdirSync(this.directory)) {
+      if (!entry.endsWith(".jsonl")) continue;
+      const full = `${this.directory}/${entry}`;
+      const stat = fs.statSync(full);
+      if (stat.isFile()) {
+        entries.push({ path: full, size: stat.size });
+      }
+    }
+    // Sort oldest first (filenames are ISO timestamps)
+    entries.sort((a, b) => a.path.localeCompare(b.path));
+    let total = entries.reduce((sum, e) => sum + e.size, 0);
+    while (total > this.maxBytesDir && entries.length > 0) {
+      const oldest = entries[0];
+      // Don't delete the current file
+      if (oldest.path === this.filePath) {
+        break;
+      }
+      fs.unlinkSync(oldest.path);
+      total -= oldest.size;
+      entries.shift();
+    }
+  }
+
+  private ensureOpen(): number {
+    if (this.fd === null) {
+      return this.openNewFile();
+    }
+    if (this.fileSize >= this.maxBytesFile) {
+      this.prune();
+      return this.openNewFile();
+    }
+    return this.fd;
+  }
+
+  write(record: ShuntlyRecord): void {
+    const fd = this.ensureOpen();
+    const line = record.toJSONString() + "\n";
+    fs.writeSync(fd, line);
+    this.fileSize += Buffer.byteLength(line);
+  }
+
+  close(): void {
+    if (this.fd !== null) {
+      fs.closeSync(this.fd);
+      this.fd = null;
+      this.filePath = null;
+      this.fileSize = 0;
+    }
+  }
+}
+
+/**
  * Writes to multiple sinks.
  */
 export class SinkMany implements Sink {
