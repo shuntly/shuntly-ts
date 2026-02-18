@@ -8,6 +8,7 @@ const METHOD_REGISTRY: Map<string, string[]> = new Map([
   ["Anthropic", ["messages.create", "messages.stream"]],
   ["OpenAI", ["chat.completions.create"]],
   ["GoogleGenAI", ["models.generateContent", "models.generateContentStream"]],
+  ["ollama", ["chat", "generate"]],
 ]);
 
 /**
