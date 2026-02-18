@@ -206,6 +206,9 @@ const client = shunt(myClient, null, ["chat.send", "embeddings.create"]);
 
 Added new `SinkRotating` for rotating log handling.
 
+Improved implementation of `wrapAsyncIterable`.
+
+
 ### 0.7.0
 
 Added support for pi-ai interfaces `completeSimple` and `streamSimple`.
