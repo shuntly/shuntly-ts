@@ -1,24 +1,19 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { Writable } from "stream";
 import { shunt, SinkStream } from "../../src/index.js";
-import * as ollama from "ollama";
+import { Ollama } from "ollama";
 
-const MODEL = "qwen2.5:0.5b"; // Lightweight model for testing
+const API_KEY = process.env.OLLAMA_API_KEY;
+const MODEL = "nemotron-3-nano:30b";
 
-// Check if Ollama is running and model is available
-let isOllamaAvailable = false;
+function makeClient(): Ollama {
+  return new Ollama({
+    host: "https://ollama.com",
+    headers: { Authorization: `Bearer ${API_KEY}` },
+  });
+}
 
-beforeAll(async () => {
-  try {
-    const models = await ollama.list();
-    const modelNames = models.models?.map((m) => m.name) || [];
-    isOllamaAvailable = modelNames.some((name) => name.includes(MODEL));
-  } catch (error) {
-    isOllamaAvailable = false;
-  }
-});
-
-const maybe = isOllamaAvailable ? describe : describe.skip;
+const maybe = API_KEY ? describe : describe.skip;
 
 maybe("ollama adhoc", () => {
   it("captures chat record", async () => {
@@ -30,9 +25,9 @@ maybe("ollama adhoc", () => {
       },
     });
 
-    const wrappedOllama = shunt(ollama, new SinkStream(writable), ["chat"]);
+    const client = shunt(makeClient(), new SinkStream(writable));
 
-    const response = await wrappedOllama.chat({
+    const response = await client.chat({
       model: MODEL,
       messages: [{ role: "user", content: "Reply with just the word: pong" }],
     });
@@ -43,7 +38,7 @@ maybe("ollama adhoc", () => {
 
     // Assert on the captured record
     const record = JSON.parse(sinkLines[0].trim());
-    expect(record.client).toBe("ollama");
+    expect(record.client).toBe("Ollama");
     expect(record.method).toBe("chat");
     expect(record.request.model).toBe(MODEL);
     expect(record.request.messages[0].content).toBe(
@@ -63,9 +58,9 @@ maybe("ollama adhoc", () => {
       },
     });
 
-    const wrappedOllama = shunt(ollama, new SinkStream(writable), ["generate"]);
+    const client = shunt(makeClient(), new SinkStream(writable));
 
-    const response = await wrappedOllama.generate({
+    const response = await client.generate({
       model: MODEL,
       prompt: "Reply with just the word: ping",
     });
@@ -75,7 +70,7 @@ maybe("ollama adhoc", () => {
 
     // Assert on the captured record
     const record = JSON.parse(sinkLines[0].trim());
-    expect(record.client).toBe("ollama");
+    expect(record.client).toBe("Ollama");
     expect(record.method).toBe("generate");
     expect(record.request.model).toBe(MODEL);
     expect(record.request.prompt).toBe("Reply with just the word: ping");
@@ -93,9 +88,9 @@ maybe("ollama adhoc", () => {
       },
     });
 
-    const wrappedOllama = shunt(ollama, new SinkStream(writable), ["chat"]);
+    const client = shunt(makeClient(), new SinkStream(writable));
 
-    const stream = await wrappedOllama.chat({
+    const stream = await client.chat({
       model: MODEL,
       messages: [{ role: "user", content: "Count to 3" }],
       stream: true,
@@ -109,20 +104,17 @@ maybe("ollama adhoc", () => {
       chunks.push(chunk);
     }
 
-    // Assert we got streaming chunks
     expect(chunks.length).toBeGreaterThan(0);
     expect(chunks.every((chunk) => "message" in chunk)).toBe(true);
 
     // Assert on the captured record
     const record = JSON.parse(sinkLines[0].trim());
-    expect(record.client).toBe("ollama");
+    expect(record.client).toBe("Ollama");
     expect(record.method).toBe("chat");
     expect(record.request.model).toBe(MODEL);
     expect(record.request.stream).toBe(true);
     expect(record.error).toBeNull();
     expect(record.durationMs).toBeGreaterThan(0);
-
-    // Response should be the accumulated chunks
     expect(Array.isArray(record.response)).toBe(true);
     expect(record.response.length).toBeGreaterThan(0);
   });
@@ -136,9 +128,9 @@ maybe("ollama adhoc", () => {
       },
     });
 
-    const wrappedOllama = shunt(ollama, new SinkStream(writable), ["generate"]);
+    const client = shunt(makeClient(), new SinkStream(writable));
 
-    const stream = await wrappedOllama.generate({
+    const stream = await client.generate({
       model: MODEL,
       prompt: "Say hello",
       stream: true,
@@ -152,19 +144,16 @@ maybe("ollama adhoc", () => {
       chunks.push(chunk);
     }
 
-    // Assert we got streaming chunks
     expect(chunks.length).toBeGreaterThan(0);
 
     // Assert on the captured record
     const record = JSON.parse(sinkLines[0].trim());
-    expect(record.client).toBe("ollama");
+    expect(record.client).toBe("Ollama");
     expect(record.method).toBe("generate");
     expect(record.request.model).toBe(MODEL);
     expect(record.request.stream).toBe(true);
     expect(record.error).toBeNull();
     expect(record.durationMs).toBeGreaterThan(0);
-
-    // Response should be the accumulated chunks
     expect(Array.isArray(record.response)).toBe(true);
     expect(record.response.length).toBeGreaterThan(0);
   });
