@@ -61,6 +61,42 @@ Each call to `messages.create()` writes a complete JSON record:
 }
 ```
 
+## Diversify
+
+Shuntly presently supports the following SDKs and clients:
+
+
+| Client        | Package                                                  | Methods                                                  |
+| ------------- | -------------------------------------------------------- | -------------------------------------------------------- |
+| `Anthropic`   | [`npm`](https://www.npmjs.com/package/@anthropic-ai/sdk) | `messages.create`, `messages.stream`                     |
+| `OpenAI`      | [`npm`](https://www.npmjs.com/package/openai)            | `chat.completions.create`                                |
+| `GoogleGenAI` | [`npm`](https://www.npmjs.com/package/@google/genai)     | `models.generateContent`, `models.generateContentStream` |
+| `Ollama`      | [`npm`](https://www.npmjs.com/package/ollama)            | `chat`, `generate`                                       |
+
+Shuntly also supports wrapping standalone functions, such as those from [`@mariozechner/pi-ai`](https://www.npmjs.com/package/@mariozechner/pi-ai):
+
+| Function         | Description                                      |
+| ---------------- | ------------------------------------------------ |
+| `complete`       | Non-streaming completion (returns `Promise`)     |
+| `completeSimple` | Non-streaming with reasoning options             |
+| `stream`         | Streaming completion (returns async iterable)    |
+| `streamSimple`   | Streaming with reasoning options                 |
+
+```typescript
+import { complete, completeSimple, stream, streamSimple } from "@mariozechner/pi-ai";
+const complete = shunt(complete, sink);
+const completeSimple = shunt(completeSimple, sink);
+const stream = shunt(stream, sink);
+const streamSimple = shunt(streamSimple, sink);
+```
+
+For anything else, method paths can be explicitly provided:
+
+```typescript
+const client = shunt(myClient, null, ["chat.send", "embeddings.create"]);
+```
+
+
 ## View
 
 Shuntly JSON output can be streamed or read with a JSON viewer like [`fx`](https://fx.wtf). These tools provide JSON syntax highlighting and collapsible sections.
@@ -167,44 +203,14 @@ class SinkConsole implements Sink {
 }
 ```
 
-## Supported SDKs
-
-Shuntly presently handles these clients:
-
-| Client        | Package                                                  | Methods                                                  |
-| ------------- | -------------------------------------------------------- | -------------------------------------------------------- |
-| `Anthropic`   | [`npm`](https://www.npmjs.com/package/@anthropic-ai/sdk) | `messages.create`, `messages.stream`                     |
-| `OpenAI`      | [`npm`](https://www.npmjs.com/package/openai)            | `chat.completions.create`                                |
-| `GoogleGenAI` | [`npm`](https://www.npmjs.com/package/@google/genai)     | `models.generateContent`, `models.generateContentStream` |
-
-Shuntly also supports wrapping standalone functions, such as those from [`@mariozechner/pi-ai`](https://www.npmjs.com/package/@mariozechner/pi-ai):
-
-| Function         | Description                                      |
-| ---------------- | ------------------------------------------------ |
-| `complete`       | Non-streaming completion (returns `Promise`)     |
-| `completeSimple` | Non-streaming with reasoning options             |
-| `stream`         | Streaming completion (returns async iterable)    |
-| `streamSimple`   | Streaming with reasoning options                 |
-
-```typescript
-import { complete, completeSimple, stream, streamSimple } from "@mariozechner/pi-ai";
-const complete = shunt(complete, sink);
-const completeSimple = shunt(completeSimple, sink);
-const stream = shunt(stream, sink);
-const streamSimple = shunt(streamSimple, sink);
-```
-
-For anything else, method paths can be explicitly provided:
-
-```typescript
-const client = shunt(myClient, null, ["chat.send", "embeddings.create"]);
-```
 
 ## What is New in Shuntly
 
-### dev
+### 0.8.0
 
-Added new `SinkRotating` for rotating log handling.
+Added support for Ollama interfaces `chat` and `generate`.
+
+Added `SinkRotating` for rotating log handling.
 
 Improved implementation of `wrapAsyncIterable`.
 
