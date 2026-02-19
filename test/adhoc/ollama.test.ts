@@ -103,7 +103,9 @@ maybe("ollama adhoc", () => {
 
     // Consume the streaming response
     const chunks = [];
-    for await (const chunk of stream as AsyncIterable<Record<string, unknown>>) {
+    for await (const chunk of stream as AsyncIterable<
+      Record<string, unknown>
+    >) {
       chunks.push(chunk);
     }
 
@@ -144,7 +146,9 @@ maybe("ollama adhoc", () => {
 
     // Consume the streaming response
     const chunks = [];
-    for await (const chunk of stream as AsyncIterable<Record<string, unknown>>) {
+    for await (const chunk of stream as AsyncIterable<
+      Record<string, unknown>
+    >) {
       chunks.push(chunk);
     }
 
